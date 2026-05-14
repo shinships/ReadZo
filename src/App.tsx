@@ -135,6 +135,18 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'translate' | 'history'>('translate');
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
 
+  const [fontSize, setFontSize] = useState<number>(16);
+  const [translationCache, setTranslationCache] = useState<Record<string, string>>(() => {
+    try {
+       const c = sessionStorage.getItem('translationCache');
+       return c ? JSON.parse(c) : {};
+    } catch { return {}; }
+  });
+
+  useEffect(() => {
+    sessionStorage.setItem('translationCache', JSON.stringify(translationCache));
+  }, [translationCache]);
+
   // TTS State
   const [voice, setVoice] = useState<VoiceName>('Kore');
   const [speed, setSpeed] = useState<number>(1.2);
@@ -212,13 +224,20 @@ export default function App() {
         setCurrentResult({ segments: [...newSegments] });
 
         try {
-            const translated = await translateText(text, style);
+            const cacheKey = `${style}_${text.length}_${text.substring(0, 100)}`;
+            let translated = translationCache[cacheKey];
+            let isCached = !!translated;
+            if (!translated) {
+                translated = await translateText(text, style);
+                setTranslationCache(prev => ({...prev, [cacheKey]: translated}));
+            }
+
             // Replace placeholder with actual translation
             newSegments[newSegments.length - 1].translated = translated;
             setCurrentResult({ segments: [...newSegments] });
             
             // Wait 2.5s between pages to avoid Gemini rate limit on free tier
-            if (i < endPage) {
+            if (i < endPage && !isCached) {
                 await new Promise(resolve => setTimeout(resolve, 2500));
             }
         } catch (err: any) {
@@ -451,6 +470,22 @@ export default function App() {
                     )}
                   </div>
                   
+                  {/* Font Size Settings */}
+                  <div className="space-y-1 mb-2">
+                    <label className="text-[10px] font-black uppercase opacity-50">Cỡ chữ bản dịch</label>
+                    <div className="flex justify-between items-center bg-gray-100 border-2 border-black p-1">
+                        <button 
+                           onClick={() => setFontSize(p => Math.max(12, p - 2))}
+                           className="px-3 py-1 font-black hover:bg-black hover:text-white transition-colors"
+                        >A-</button>
+                        <span className="text-sm font-bold">{fontSize}px</span>
+                        <button 
+                           onClick={() => setFontSize(p => Math.min(32, p + 2))}
+                           className="px-3 py-1 font-black hover:bg-black hover:text-white transition-colors"
+                        >A+</button>
+                    </div>
+                  </div>
+
                   {/* Style Settings */}
                   <div className="space-y-1">
                     <label className="text-[10px] font-black uppercase opacity-50">Phong cách dịch</label>
@@ -496,15 +531,15 @@ export default function App() {
                   </div>
                   
                   <div className="space-y-1">
-                     <label className="text-[10px] font-black uppercase opacity-50">Tốc độ ({speed.toFixed(1)}x)</label>
+                     <label className="text-[10px] font-black uppercase opacity-50">Tốc độ ({speed}x)</label>
                      <div className="flex justify-between bg-gray-100 p-1 border-2 border-black">
-                        {[0.8, 1.0, 1.2, 1.5].map(s => (
+                        {[1.2, 1.25, 1.3, 1.35, 1.5].map(s => (
                            <button 
                               key={s}
                               onClick={() => setSpeed(s)}
-                              className={`px-2 py-1 text-xs font-black border-2 ${speed === s ? 'bg-white border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : 'border-transparent hover:border-black/20'}`}
+                              className={`px-1 lg:px-2 py-1 text-xs font-black border-2 ${speed === s ? 'bg-white border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : 'border-transparent hover:border-black/20'}`}
                            >
-                              {s.toFixed(1)}x
+                              {s}x
                            </button>
                         ))}
                      </div>
@@ -601,7 +636,7 @@ export default function App() {
                                    </div>
 
                                    {/* Translated Content */}
-                                   <div className="markdown-body">
+                                   <div className="markdown-body" style={{ fontSize: `${fontSize}px` }}>
                                       {segment.translated !== null && segment.translated !== "" ? (
                                          <Markdown>{segment.translated}</Markdown>
                                       ) : segment.translated === "" ? (

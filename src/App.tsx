@@ -113,17 +113,25 @@ function PDFPagePreview({ parsedPdf, currentPage }: { parsedPdf: ParsedPDF, curr
 }
 
 export default function App() {
+  const savedState = React.useMemo(() => {
+    try {
+      const s = sessionStorage.getItem('translationState');
+      return s ? JSON.parse(s) : null;
+    } catch { return null; }
+  }, []);
+
   const [file, setFile] = useState<File | null>(null);
   const [parsedPdf, setParsedPdf] = useState<ParsedPDF | null>(null);
   const [isParsing, setIsParsing] = useState(false);
   const [parseError, setParseError] = useState('');
 
-  const [startPage, setStartPage] = useState(1);
-  const [endPage, setEndPage] = useState(1);
-  const [style, setStyle] = useState<TranslationStyle>('genz');
+  const [startPage, setStartPage] = useState<number>(savedState?.startPage ?? 1);
+  const [endPage, setEndPage] = useState<number>(savedState?.endPage ?? 1);
+  const [style, setStyle] = useState<TranslationStyle>(savedState?.style ?? 'genz');
 
   const [isTranslating, setIsTranslating] = useState(false);
-  const [currentResult, setCurrentResult] = useState<{ segments: Segment[], error?: string }>({ segments: [] });
+  const [currentResult, setCurrentResult] = useState<{ segments: Segment[], error?: string }>(savedState?.currentResult ?? { segments: [] });
+  const [savedFileName, setSavedFileName] = useState<string | null>(savedState?.fileName ?? null);
   
   const [history, setHistory] = useState<TranslationRecord[]>(() => {
     try {
@@ -134,6 +142,16 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<'translate' | 'history'>('translate');
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    sessionStorage.setItem('translationState', JSON.stringify({
+       startPage,
+       endPage,
+       style,
+       currentResult,
+       fileName: file?.name || savedFileName
+    }));
+  }, [startPage, endPage, style, currentResult, file, savedFileName]);
 
   const [fontSize, setFontSize] = useState<number>(16);
   const [translationCache, setTranslationCache] = useState<Record<string, string>>(() => {
@@ -408,6 +426,11 @@ export default function App() {
               {!file ? (
                  <div className="bg-white border-2 border-black p-4 flex flex-col gap-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] shrink-0">
                     <h2 className="text-lg font-black uppercase border-b-2 border-black pb-2">Upload PDF</h2>
+                    {savedFileName && currentResult.segments.length > 0 && (
+                        <div className="bg-[#E0F2FE] p-2 border-2 border-black text-[11px] font-bold text-black leading-snug">
+                            Đang hiển thị bản dịch của <strong className="font-black">{savedFileName}</strong>. Vui lòng tải lên lại file này để tiếp tục dịch các trang khác.
+                        </div>
+                    )}
                     <label className="relative flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-black hover:bg-gray-100 cursor-pointer">
                       <div className="flex flex-col items-center justify-center pt-5 pb-6">
                             <Upload className="w-8 h-8 text-black mb-2" />
@@ -470,22 +493,6 @@ export default function App() {
                     )}
                   </div>
                   
-                  {/* Font Size Settings */}
-                  <div className="space-y-1 mb-2">
-                    <label className="text-[10px] font-black uppercase opacity-50">Cỡ chữ bản dịch</label>
-                    <div className="flex justify-between items-center bg-gray-100 border-2 border-black p-1">
-                        <button 
-                           onClick={() => setFontSize(p => Math.max(12, p - 2))}
-                           className="px-3 py-1 font-black hover:bg-black hover:text-white transition-colors"
-                        >A-</button>
-                        <span className="text-sm font-bold">{fontSize}px</span>
-                        <button 
-                           onClick={() => setFontSize(p => Math.min(32, p + 2))}
-                           className="px-3 py-1 font-black hover:bg-black hover:text-white transition-colors"
-                        >A+</button>
-                    </div>
-                  </div>
-
                   {/* Style Settings */}
                   <div className="space-y-1">
                     <label className="text-[10px] font-black uppercase opacity-50">Phong cách dịch</label>
@@ -514,9 +521,25 @@ export default function App() {
                 </motion.div>
               )}
 
-              {/* TTS Global Settings */}
+              {/* Global Settings */}
               <div className="bg-white border-2 border-black p-4 flex flex-col gap-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] shrink-0">
-                  <h2 className="text-lg font-black uppercase border-b-2 border-black pb-2">Text-to-Speech</h2>
+                  <h2 className="text-lg font-black uppercase border-b-2 border-black pb-2">Tùy chỉnh & Đọc</h2>
+                  
+                  {/* Font Size Settings */}
+                  <div className="space-y-1 mb-2">
+                    <label className="text-[10px] font-black uppercase opacity-50">Cỡ chữ bản dịch</label>
+                    <div className="flex justify-between items-center bg-gray-100 border-2 border-black p-1">
+                        <button 
+                           onClick={() => setFontSize(p => Math.max(12, p - 2))}
+                           className="px-3 py-1 font-black hover:bg-black hover:text-white transition-colors"
+                        >A-</button>
+                        <span className="text-sm font-bold">{fontSize}px</span>
+                        <button 
+                           onClick={() => setFontSize(p => Math.min(32, p + 2))}
+                           className="px-3 py-1 font-black hover:bg-black hover:text-white transition-colors"
+                        >A+</button>
+                    </div>
+                  </div>
                   
                   <div className="space-y-1">
                      <label className="text-[10px] font-black uppercase opacity-50">Giọng đọc</label>

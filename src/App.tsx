@@ -180,6 +180,8 @@ export default function App() {
   const [isGeneratingTTS, setIsGeneratingTTS] = useState(false);
   const [isGeneratingCombinedTTS, setIsGeneratingCombinedTTS] = useState(false);
   const [combinedTTSProgress, setCombinedTTSProgress] = useState('');
+  const [combinedTTSPercent, setCombinedTTSPercent] = useState(0);
+  const cancelTTSRef = useRef(false);
   const [audioProgress, setAudioProgress] = useState(0);
   const [audioDuration, setAudioDuration] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -317,28 +319,39 @@ export default function App() {
       if (currentResult.segments.length === 0) return;
       
       stopAudio();
+      cancelTTSRef.current = false;
       setIsGeneratingCombinedTTS(true);
+      setCombinedTTSPercent(0);
       setCombinedTTSProgress(`Đang xử lý trang 1/${currentResult.segments.length}...`);
-      
+
       try {
           const pcmBuffers: Array<Uint8Array> = [];
           const totalPages = currentResult.segments.length;
+          // Số trang có nội dung để tính % theo tiến độ thực
+          const contentPages = currentResult.segments.filter(s => s.translated && s.translated.trim()).length || 1;
+          let done = 0;
           let index = 1;
           for (const segment of currentResult.segments) {
+              if (cancelTTSRef.current) throw new Error("__CANCELLED__");
               const page = index++;
               if (segment.translated && segment.translated.trim()) {
                   // Wait 1s to prevent rate limits or overload
                   await new Promise(r => setTimeout(r, 1000));
+                  if (cancelTTSRef.current) throw new Error("__CANCELLED__");
                   const pcm = await generateRawTTSChunked(segment.translated, voice, {
                       sleepMs: 1000,
-                      onProgress: (done, total) =>
+                      onProgress: (c, total) => {
                           setCombinedTTSProgress(
                               total > 1
-                                  ? `Đang xử lý trang ${page}/${totalPages} · đoạn ${done}/${total}...`
+                                  ? `Đang xử lý trang ${page}/${totalPages} · đoạn ${c}/${total}...`
                                   : `Đang xử lý trang ${page}/${totalPages}...`
-                          ),
+                          );
+                          setCombinedTTSPercent(Math.round(((done + c / total) / contentPages) * 100));
+                      },
                   });
                   pcmBuffers.push(pcm);
+                  done++;
+                  setCombinedTTSPercent(Math.round((done / contentPages) * 100));
               } else {
                   setCombinedTTSProgress(`Đang xử lý trang ${page}/${totalPages}...`);
               }
@@ -355,11 +368,19 @@ export default function App() {
           setActiveAudioSegment(-1);
           setIsPlaying(true);
       } catch (err: any) {
-          alert("Lỗi tạo audio thu âm: " + err.message);
+          if (err.message !== "__CANCELLED__") {
+              alert("Lỗi tạo audio thu âm: " + err.message);
+          }
       } finally {
+          cancelTTSRef.current = false;
           setIsGeneratingCombinedTTS(false);
           setCombinedTTSProgress('');
+          setCombinedTTSPercent(0);
       }
+  };
+
+  const cancelCombinedTTS = () => {
+      cancelTTSRef.current = true;
   };
 
   const playTTS = async (text: string, pageNumber: number) => {
@@ -678,14 +699,30 @@ export default function App() {
 
                {currentResult.segments.length > 0 && !isTranslating && !currentResult.error && (
                    <div className="flex flex-col sm:flex-row sm:justify-end gap-2 mb-4 shrink-0">
-                       <button
-                           onClick={playCombinedTTS}
-                           disabled={isGeneratingCombinedTTS || isGeneratingTTS}
-                           className="bg-[#22C55E] text-white px-4 py-2 border-2 border-black font-black uppercase text-sm shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:translate-x-0 disabled:hover:translate-y-0 disabled:hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]"
-                       >
-                           {isGeneratingCombinedTTS ? <Loader2 className="w-4 h-4 animate-spin"/> : <Volume2 className="w-4 h-4" />}
-                           {isGeneratingCombinedTTS ? combinedTTSProgress : 'Tạo Audio Tất Cả Trang'}
-                       </button>
+                       {isGeneratingCombinedTTS ? (
+                           <div className="flex items-stretch gap-2">
+                               <div className="relative bg-[#22C55E] text-white px-4 py-2 border-2 border-black font-black uppercase text-sm shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex items-center gap-2 overflow-hidden min-w-[200px]">
+                                   <div className="absolute inset-0 bg-black/25 origin-left transition-transform" style={{ transform: `scaleX(${combinedTTSPercent / 100})` }} />
+                                   <Loader2 className="w-4 h-4 animate-spin relative z-10"/>
+                                   <span className="relative z-10 truncate">{combinedTTSPercent}% · {combinedTTSProgress}</span>
+                               </div>
+                               <button
+                                   onClick={cancelCombinedTTS}
+                                   className="bg-red-500 text-white px-3 py-2 border-2 border-black font-black uppercase text-sm shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-all flex items-center justify-center gap-1 shrink-0"
+                               >
+                                   <Square className="w-3 h-3 fill-current"/> Dừng
+                               </button>
+                           </div>
+                       ) : (
+                           <button
+                               onClick={playCombinedTTS}
+                               disabled={isGeneratingTTS}
+                               className="bg-[#22C55E] text-white px-4 py-2 border-2 border-black font-black uppercase text-sm shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:translate-x-0 disabled:hover:translate-y-0 disabled:hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]"
+                           >
+                               <Volume2 className="w-4 h-4" />
+                               Tạo Audio Tất Cả Trang
+                           </button>
+                       )}
                        <button
                            onClick={downloadPDF}
                            disabled={isExportingPDF}

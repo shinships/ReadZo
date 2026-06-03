@@ -54,6 +54,61 @@ Văn phong trẻ trung, gần gũi nhưng vẫn phải truyền đạt CHÍNH X�
   return response.text?.trim() || "";
 }
 
+// Split long text into TTS-safe chunks on paragraph/sentence boundaries.
+const TTS_CHUNK_CHARS = 1800;
+export function chunkText(text: string, maxChars: number = TTS_CHUNK_CHARS): string[] {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+
+  const paragraphs = trimmed.split(/\n\s*\n/);
+  const pieces: string[] = [];
+  for (const para of paragraphs) {
+    if (para.length <= maxChars) {
+      pieces.push(para);
+      continue;
+    }
+    // Paragraph too long: split on sentence boundaries (Vietnamese + common punctuation)
+    const sentences = para.split(/(?<=[.!?…。])\s+/);
+    for (const sentence of sentences) {
+      if (sentence.length <= maxChars) {
+        pieces.push(sentence);
+      } else {
+        // Last resort: hard-slice an oversized sentence
+        for (let i = 0; i < sentence.length; i += maxChars) {
+          pieces.push(sentence.slice(i, i + maxChars));
+        }
+      }
+    }
+  }
+
+  // Greedily pack pieces into <= maxChars chunks
+  const chunks: string[] = [];
+  let current = "";
+  for (const piece of pieces) {
+    const candidate = current ? `${current}\n\n${piece}` : piece;
+    if (candidate.length > maxChars && current) {
+      chunks.push(current);
+      current = piece;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current.trim()) chunks.push(current);
+  return chunks;
+}
+
+// Concatenate multiple raw PCM buffers into one.
+export function concatPcm(buffers: Uint8Array[]): Uint8Array {
+  const totalLength = buffers.reduce((acc, b) => acc + b.length, 0);
+  const combined = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const b of buffers) {
+    combined.set(b, offset);
+    offset += b.length;
+  }
+  return combined;
+}
+
 // Convert raw PCM (16-bit little endian, mono, expected from TTS) to WAV Blob URL
 export function createWavBlobUrlFromPCM(pcmData: Uint8Array, sampleRate: number = 24000): string {
     const wavHeader = new ArrayBuffer(44);
@@ -110,8 +165,29 @@ export async function generateRawTTS(text: string, voiceName: VoiceName): Promis
   return pcmData;
 }
 
+// Generate TTS for arbitrarily long text by chunking, then concatenating PCM.
+export async function generateRawTTSChunked(
+  text: string,
+  voiceName: VoiceName,
+  opts?: { sleepMs?: number; onProgress?: (done: number, total: number) => void }
+): Promise<Uint8Array> {
+  const chunks = chunkText(text);
+  if (chunks.length === 0) {
+    throw new Error("Không có nội dung để đọc.");
+  }
+  const buffers: Uint8Array[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    if (i > 0 && opts?.sleepMs) {
+      await new Promise(r => setTimeout(r, opts.sleepMs));
+    }
+    buffers.push(await generateRawTTS(chunks[i], voiceName));
+    opts?.onProgress?.(i + 1, chunks.length);
+  }
+  return concatPcm(buffers);
+}
+
 export async function generateTTS(text: string, voiceName: VoiceName): Promise<string> {
   // Assuming Gemini TTS returns 24000Hz by default
-  const pcmData = await generateRawTTS(text, voiceName);
+  const pcmData = await generateRawTTSChunked(text, voiceName, { sleepMs: 1000 });
   return createWavBlobUrlFromPCM(pcmData, 24000);
 }

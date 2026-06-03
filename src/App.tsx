@@ -736,9 +736,33 @@ export default function App() {
                
                <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-4">
                    {currentResult.segments.length === 0 ? (
-                       <div className="h-full flex flex-col items-center justify-center border-2 border-black border-dashed bg-gray-50 opacity-50 p-12">
-                           <FileText className="w-12 h-12 mb-4" />
-                           <p className="font-bold uppercase tracking-widest text-sm">Kết quả biên dịch sẽ hiển thị tại đây.</p>
+                       <div className="h-full flex flex-col items-center justify-center border-2 border-black border-dashed bg-gray-50 p-8 md:p-12 text-center">
+                           {!file ? (
+                               <>
+                                   {/* Mobile: nút tải lên ngay màn hình chính (sidebar bị ẩn trong drawer) */}
+                                   <label className="md:hidden flex flex-col items-center justify-center cursor-pointer">
+                                       <Upload className="w-12 h-12 mb-4" />
+                                       <p className="font-black uppercase tracking-widest text-sm">Tải lên tài liệu</p>
+                                       <p className="text-[10px] font-black opacity-50 uppercase mt-1">PDF · DOCX · TXT · Tối đa 20MB</p>
+                                       <input type="file" accept=".pdf,.docx,.txt,application/pdf" className="hidden" onChange={handleFileUpload} />
+                                   </label>
+                                   {/* Desktop: sidebar đã có ô tải lên */}
+                                   <div className="hidden md:flex flex-col items-center opacity-50">
+                                       <FileText className="w-12 h-12 mb-4" />
+                                       <p className="font-bold uppercase tracking-widest text-sm">Kết quả biên dịch sẽ hiển thị tại đây.</p>
+                                   </div>
+                               </>
+                           ) : isParsing ? (
+                               <div className="flex items-center gap-2 font-bold uppercase text-sm"><Loader2 className="w-5 h-5 animate-spin"/> Đang đọc tài liệu...</div>
+                           ) : parseError ? (
+                               <div className="text-white text-sm font-bold px-3 py-2 bg-red-500 border-2 border-black">{parseError}</div>
+                           ) : (
+                               <div className="flex flex-col items-center">
+                                   <FileText className="w-12 h-12 mb-4 opacity-50" />
+                                   <p className="font-bold uppercase tracking-widest text-sm opacity-50">Kết quả biên dịch sẽ hiển thị tại đây.</p>
+                                   <button onClick={() => setSettingsOpen(true)} className="md:hidden mt-4 bg-black text-white px-4 py-2 text-xs font-black uppercase border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">Mở cấu hình</button>
+                               </div>
+                           )}
                        </div>
                    ) : (
                        <div className="bg-[#E0F2FE] border-2 border-black flex flex-col shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all">

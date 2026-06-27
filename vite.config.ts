@@ -14,6 +14,18 @@ export default defineConfig(() => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    build: {
+      rollupOptions: {
+        output: {
+          // Split heavy libs into separate chunks so the initial load is smaller.
+          manualChunks: {
+            pdfjs: ['pdfjs-dist'],
+            markdown: ['react-markdown'],
+            motion: ['motion'],
+          },
+        },
+      },
+    },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       hmr: process.env.DISABLE_HMR !== 'true',
